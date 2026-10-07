@@ -1,0 +1,22 @@
+{
+  "manifest_version": 3,
+  "name": "Photoprotocol",
+  "version": "1.0",
+  "description": "Восстановление зашифрованных артов из шума",
+  "permissions": [
+    "storage",
+    "activeTab"
+  ],
+  "action": {
+    "default_popup": "popup.html"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}
