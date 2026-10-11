@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Photoprotocol Decryptor
 // @namespace    https://github.com/hfaify/Photoprotocol
-// @version      1.1.0
+// @version      1.2.0
 // @updateURL    https://github.com/hfaify/Photoprotocol/blob/main/userscript/photoprotocol.user.js
 // @downloadURL  https://github.com/hfaify/Photoprotocol/blob/main/userscript/photoprotocol.user.js
 // @description  Клиентская расшифровка артов Photoprotocol прямо в ленте соцсетей
