@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-select=no">
+  <title>Photoprotocol Gallery</title>
+  <!-- Интеграция Telegram Mini Apps SDK -->
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <style>
+    :root {
+      --bg: var(--tg-theme-bg-color, #181818);
+      --text: var(--tg-theme-text-color, #ffffff);
+      --btn: var(--tg-theme-button-color, #2481cc);
+      --btn-text: var(--tg-theme-button-text-color, #ffffff);
+      --hint: var(--tg-theme-hint-color, #888888);
+    }
+    body {
+      margin: 0;
+      padding: 12px;
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      box-sizing: border-box;
+    }
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+    }
+    .key-bar {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 16px;
+    }
+    input {
+      flex: 1;
+      padding: 10px;
+      border: 1px solid #333;
+      border-radius: 8px;
+      background: #242424;
+      color: #fff;
+      font-size: 14px;
+      outline: none;
+    }
+    input:focus {
+      border-color: var(--btn);
+    }
+    button {
+      padding: 10px 16px;
+      background: var(--btn);
+      color: var(--btn-text);
+      border: none;
+      border-radius: 8px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .feed {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+    .card {
+      background: #222;
+      border-radius: 12px;
+      overflow: hidden;
+      padding: 8px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    }
+    .card img {
+      width: 100%;
+      height: auto;
+      border-radius: 8px;
+      display: block;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="header">
+    <h3 style="margin: 0;">🛡️ Photoprotocol</h3>
+    <span id="counter" style="font-size: 12px; color: var(--hint);">Ожидание канала...</span>
+  </div>
+
+  <div class="key-bar">
+    <input type="password" id="keyInput" placeholder="Введите ключ дешифровки">
+    <button id="applyBtn">Применить</button>
+  </div>
+
+  <div class="feed" id="feed">
+    <!-- Сюда динамически загружаются посты -->
+  </div>
+
+  <script>
+    const tg = window.Telegram?.WebApp;
+    if (tg) {
+      tg.ready();
+      tg.expand();
+    }
+
+    const TILE_SIZE = 32;
+
+    // --- PRNG ---
+    class WebRNG {
+      constructor(seedBigInt) { this.state = Number(seedBigInt & 0xFFFFFFFFn); }
+      nextInt(maxVal) {
+        this.state = (this.state + 0x6D2B79F5) | 0;
+        let t = Math.imul(this.state ^ (this.state >>> 15), 1 | this.state);
+        t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+        return Math.floor((((t ^ (t >>> 14)) >>> 0) / 4294967296) * maxVal);
+      }
+    }
+
+    function getLayout(totalTiles, seed) {
+      const rng = new WebRNG(seed);
+      const perm = Array.from({ length: totalTiles }, (_, i) => i);
+      for (let i = totalTiles - 1; i > 0; i--) {
+        const j = rng.nextInt(i + 1);
+        const tmp = perm[i];
+        perm[i] = perm[j];
+        perm[j] = tmp;
+      }
+      const modes = new Uint8Array(totalTiles);
+      for (let i = 0; i < totalTiles; i++) modes[i] = rng.nextInt(8);
+      const invPerm = new Int32Array(totalTiles);
+      for (let i = 0; i < totalTiles; i++) invPerm[perm[i]] = i;
+      return { invPerm, modes };
+    }
+
+    function drawReversedTile(ctx, srcCanvas, sx, sy, dx, dy, m) {
+      ctx.save();
+      ctx.translate(dx + TILE_SIZE / 2, dy + TILE_SIZE / 2);
+      switch (m) {
+        case 1: ctx.rotate(Math.PI / 2); break;
+        case 2: ctx.rotate(Math.PI); break;
+        case 3: ctx.rotate(-Math.PI / 2); break;
+        case 4: ctx.scale(-1, 1); break;
+        case 5: ctx.scale(1, -1); break;
+        case 6: ctx.transform(0, 1, 1, 0, 0, 0); break;
+        case 7: ctx.transform(0, -1, -1, 0, 0, 0); break;
+      }
+      ctx.drawImage(srcCanvas, sx, sy, TILE_SIZE, TILE_SIZE, -TILE_SIZE / 2, -TILE_SIZE / 2, TILE_SIZE, TILE_SIZE);
+      ctx.restore();
+    }
+
+    async function unscramble(img, secretKey) {
+      if (img.dataset.unscrambled === "true" || !img.naturalWidth) return;
+
+      const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(secretKey));
+      const sha = new Uint8Array(buf);
+      let seed = 0n;
+      for (let i = 0; i < 8; i++) seed = (seed << 8n) | BigInt(sha[i]);
+
+      const w = img.naturalWidth;
+      const h = img.naturalHeight;
+      const cols = Math.floor(w / TILE_SIZE);
+      const rows = Math.floor(h / TILE_SIZE);
+      const totalTiles = cols * rows;
+      if (totalTiles < 16) return;
+
+      const { invPerm, modes } = getLayout(totalTiles, seed);
+
+      const canvas = document.createElement('canvas');
+      canvas.width = cols * TILE_SIZE;
+      canvas.height = rows * TILE_SIZE;
+      const ctx = canvas.getContext('2d');
+
+      const srcCanvas = document.createElement('canvas');
+      srcCanvas.width = canvas.width;
+      srcCanvas.height = canvas.height;
+      srcCanvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+
+      for (let origIdx = 0; origIdx < totalTiles; origIdx++) {
+        const scrIdx = invPerm[origIdx];
+        const sx = (scrIdx % cols) * TILE_SIZE;
+        const sy = Math.floor(scrIdx / cols) * TILE_SIZE;
+        const dx = (origIdx % cols) * TILE_SIZE;
+        const dy = Math.floor(origIdx / cols) * TILE_SIZE;
+        drawReversedTile(ctx, srcCanvas, sx, sy, dx, dy, modes[origIdx]);
+      }
+
+      img.src = canvas.toDataURL('image/jpeg', 0.95);
+      img.dataset.unscrambled = "true";
+    }
+
+    // Сохранение и применение ключа
+    const keyInput = document.getElementById('keyInput');
+    const applyBtn = document.getElementById('applyBtn');
+    keyInput.value = localStorage.getItem('pp_key') || '';
+
+    applyBtn.onclick = () => {
+      const key = keyInput.value.trim();
+      localStorage.setItem('pp_key', key);
+      document.querySelectorAll('.feed img').forEach(img => {
+        img.dataset.unscrambled = "false";
+        unscramble(img, key);
+      });
+    };
+
+    // --- Автоматическое определение целевого канала ---
+    // 1. Из ссылки Telegram Mini App (например, ?startapp=channel_name)
+    let channelName = tg?.initDataUnsafe?.start_param;
+
+    // 2. Из GET-параметра браузера (?channel=channel_name)
+    if (!channelName) {
+      const urlParams = new URLSearchParams(window.location.search);
+      channelName = urlParams.get('channel');
+    }
+
+    // 3. Если канал не задан параметром — запрашиваем у пользователя
+    if (!channelName) {
+      channelName = prompt("Введите юзернейм Telegram-канала (без @):");
+    }
+
+async function loadChannelFeed(targetChannel) {
+  if (!targetChannel) return;
+  const feed = document.getElementById('feed');
+  const counter = document.getElementById('counter');
+  counter.innerText = `@${targetChannel} (загрузка...)`;
+
+  try {
+    const targetUrl = "https://t.me/s/" + targetChannel;
+    // Используем конкатенацию строк, чтобы исключить любые ошибки с шаблонными строками
+    const proxyUrl = "https://api.allorigins.win/raw?url=" + encodeURIComponent(targetUrl);
+    
+    const res = await fetch(proxyUrl);
+    if (!res.ok) throw new Error("HTTP status " + res.status);
+    const htmlText = await res.text();
+
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(htmlText, 'text/html');
+
+    // Находим картинки в постах Telegram
+    const postPhotos = doc.querySelectorAll('.tgme_widget_message_photo_wrap');
+    const images = [];
+
+    postPhotos.forEach(el => {
+      const bg = el.style.backgroundImage;
+      const match = bg.match(/url\(["']?([^"']+)["']?\)/);
+      if (match && match[1]) {
+        images.push(match[1]);
+      }
+    });
+
+    feed.innerHTML = '';
+    counter.innerText = `@${targetChannel} (${images.length} постов)`;
+
+    if (images.length === 0) {
+      feed.innerHTML = '<div style="text-align:center;color:#888;margin-top:20px;">Постов с изображениями пока нет</div>';
+      return;
+    }
+
+    // Отрисовываем посты от новых к старым
+    images.reverse().forEach(src => {
+      const card = document.createElement('div');
+      card.className = 'card';
+      const img = document.createElement('img');
+      img.crossOrigin = "anonymous";
+      img.src = src;
+
+      img.onload = () => {
+        const key = keyInput.value.trim();
+        if (key) unscramble(img, key);
+      };
+
+      card.appendChild(img);
+      feed.appendChild(card);
+    });
+
+  } catch (e) {
+    console.error("Ошибка загрузки ленты:", e);
+    counter.innerText = "Ошибка загрузки";
+    feed.innerHTML = '<div style="text-align:center;color:#e55;margin-top:20px;">Не удалось загрузить ленту канала: ' + e.message + '</div>';
+  }
+}
+
+    if (channelName) {
+      loadChannelFeed(channelName.replace('@', '').trim());
+    }
+  </script>
+</body>
+</html>
