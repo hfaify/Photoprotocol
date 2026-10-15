@@ -1,0 +1,260 @@
+﻿<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Photoprotocol Android</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 10px;
+            background: #121212;
+            color: #fff;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            box-sizing: border-box;
+        }
+
+        .top-bar {
+            display: flex;
+            gap: 6px;
+            margin-bottom: 8px;
+        }
+
+        input, select {
+            padding: 8px;
+            border: 1px solid #333;
+            border-radius: 6px;
+            background: #222;
+            color: #fff;
+            font-size: 13px;
+        }
+
+            input[type="password"] {
+                flex: 1;
+                min-width: 0;
+            }
+
+        button {
+            padding: 8px 12px;
+            background: #0077ff;
+            color: #fff;
+            border: none;
+            border-radius: 6px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+
+        .view-container {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+            background: #1a1a1a;
+            border-radius: 8px;
+            position: relative;
+        }
+
+        img {
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain;
+            display: block;
+        }
+
+        .placeholder {
+            color: #666;
+            font-size: 14px;
+            text-align: center;
+            padding: 20px;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="top-bar">
+        <!-- Нативная кнопка открытия файла -->
+        <button id="fileBtn" title="Выбрать файл">📁</button>
+
+        <select id="modeSelect">
+            <option value="auto">Авто</option>
+            <option value="noise">Шум</option>
+            <option value="tiles">Мозаика</option>
+        </select>
+        <input type="password" id="keyInput" placeholder="Ключ">
+        <button id="applyBtn">Применить</button>
+    </div>
+
+    <div class="view-container">
+        <div id="ph" class="placeholder">Поделитесь картинкой из Telegram или нажмите 📁</div>
+        <img id="mainImg" style="display: none;">
+    </div>
+
+    <script>
+        const TILE_SIZE = 32;
+        const MAGIC_MARKER = new Uint8Array([42, 137, 219]);
+
+        let rawSourceImage = null;
+        let isProcessing = false;
+
+        class WebRNG {
+            constructor(seedBigInt) { this.state = Number(seedBigInt & 0xFFFFFFFFn); }
+            nextInt(maxVal) {
+                this.state = (this.state + 0x6D2B79F5) | 0;
+                let t = Math.imul(this.state ^ (this.state >>> 15), 1 | this.state);
+                t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+                return Math.floor((((t ^ (t >>> 14)) >>> 0) / 4294967296) * maxVal);
+            }
+            randint(min, max) { return this.nextInt(max - min + 1) + min; }
+        }
+
+        function getLayout(totalTiles, seed) {
+            const rng = new WebRNG(seed);
+            const perm = Array.from({ length: totalTiles }, (_, i) => i);
+            for (let i = totalTiles - 1; i > 0; i--) {
+                const j = rng.nextInt(i + 1);
+                const tmp = perm[i];
+                perm[i] = perm[j];
+                perm[j] = tmp;
+            }
+            const modes = new Uint8Array(totalTiles);
+            for (let i = 0; i < totalTiles; i++) modes[i] = rng.nextInt(8);
+            const invPerm = new Int32Array(totalTiles);
+            for (let i = 0; i < totalTiles; i++) invPerm[perm[i]] = i;
+            return { invPerm, modes };
+        }
+
+        function drawReversedTile(ctx, srcCanvas, sx, sy, dx, dy, m) {
+            ctx.save();
+            ctx.translate(dx + TILE_SIZE / 2, dy + TILE_SIZE / 2);
+            switch (m) {
+                case 1: ctx.rotate(Math.PI / 2); break;
+                case 2: ctx.rotate(Math.PI); break;
+                case 3: ctx.rotate(-Math.PI / 2); break;
+                case 4: ctx.scale(-1, 1); break;
+                case 5: ctx.scale(1, -1); break;
+                case 6: ctx.transform(0, 1, 1, 0, 0, 0); break;
+                case 7: ctx.transform(0, -1, -1, 0, 0, 0); break;
+            }
+            ctx.drawImage(srcCanvas, sx, sy, TILE_SIZE, TILE_SIZE, -TILE_SIZE / 2, -TILE_SIZE / 2, TILE_SIZE, TILE_SIZE);
+            ctx.restore();
+        }
+
+        async function processRawImage() {
+            if (!rawSourceImage || isProcessing) return;
+            isProcessing = true;
+
+            const key = keyInput.value.trim();
+            const mode = modeSelect.value;
+            if (!key) {
+                isProcessing = false;
+                return;
+            }
+
+            try {
+                const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(key));
+                const sha = new Uint8Array(buf);
+                let seed = 0n;
+                for (let i = 0; i < 8; i++) seed = (seed << 8n) | BigInt(sha[i]);
+
+                const w = rawSourceImage.naturalWidth;
+                const h = rawSourceImage.naturalHeight;
+
+                const canvas = document.createElement('canvas');
+                canvas.width = w;
+                canvas.height = h;
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(rawSourceImage, 0, 0);
+
+                const check = ctx.getImageData(0, 0, 1, 1).data;
+                const isNoise = (check[0] === 42 && check[1] === 137 && check[2] === 219);
+
+                let effectiveMode = mode;
+                if (mode === 'auto') {
+                    effectiveMode = isNoise ? 'noise' : 'tiles';
+                }
+
+                if (effectiveMode === 'tiles') {
+                    const cols = Math.floor(w / TILE_SIZE);
+                    const rows = Math.floor(h / TILE_SIZE);
+                    const totalTiles = cols * rows;
+                    if (totalTiles >= 16) {
+                        const { invPerm, modes } = getLayout(totalTiles, seed);
+                        const srcCanvas = document.createElement('canvas');
+                        srcCanvas.width = cols * TILE_SIZE;
+                        srcCanvas.height = rows * TILE_SIZE;
+                        srcCanvas.getContext('2d').drawImage(canvas, 0, 0);
+                        ctx.clearRect(0, 0, w, h);
+
+                        for (let origIdx = 0; origIdx < totalTiles; origIdx++) {
+                            const scrIdx = invPerm[origIdx];
+                            const sx = (scrIdx % cols) * TILE_SIZE;
+                            const sy = Math.floor(scrIdx / cols) * TILE_SIZE;
+                            const dx = (origIdx % cols) * TILE_SIZE;
+                            const dy = Math.floor(origIdx / cols) * TILE_SIZE;
+                            drawReversedTile(ctx, srcCanvas, sx, sy, dx, dy, modes[origIdx]);
+                        }
+                    }
+                } else {
+                    const rng = new WebRNG(seed);
+                    const imgData = ctx.getImageData(0, 0, w, h);
+                    const d = imgData.data;
+                    for (let i = 0; i < d.length; i += 4) {
+                        d[i] ^= rng.randint(0, 255);
+                        d[i + 1] ^= rng.randint(0, 255);
+                        d[i + 2] ^= rng.randint(0, 255);
+                    }
+                    ctx.putImageData(imgData, 0, 0);
+                }
+
+                ph.style.display = 'none';
+                mainImg.style.display = 'block';
+                mainImg.src = canvas.toDataURL('image/jpeg', 0.95);
+
+            } catch (err) {
+                console.error("Ошибка дешифровки:", err);
+            } finally {
+                isProcessing = false;
+            }
+        }
+
+        const keyInput = document.getElementById('keyInput');
+        const modeSelect = document.getElementById('modeSelect');
+        const mainImg = document.getElementById('mainImg');
+        const ph = document.getElementById('ph');
+        const fileBtn = document.getElementById('fileBtn');
+
+        keyInput.value = localStorage.getItem('pp_key') || 'my_secret_key';
+        modeSelect.value = localStorage.getItem('pp_mode') || 'auto';
+
+        document.getElementById('applyBtn').onclick = () => {
+            localStorage.setItem('pp_key', keyInput.value.trim());
+            localStorage.setItem('pp_mode', modeSelect.value);
+            processRawImage();
+        };
+
+        modeSelect.onchange = () => {
+            localStorage.setItem('pp_mode', modeSelect.value);
+            processRawImage();
+        };
+
+        // Вызываем нативный диалог через C# MAUI
+        fileBtn.onclick = () => {
+            window.location.href = "native://pickfile";
+        };
+
+        // Точка входа для картинок из Telegram или C# FilePicker
+        window.loadImageFromBase64 = function (base64Data) {
+            const img = new Image();
+            img.onload = () => {
+                rawSourceImage = img;
+                processRawImage();
+            };
+            img.src = 'data:image/png;base64,' + base64Data;
+        };
+    </script>
+</body>
+</html>
