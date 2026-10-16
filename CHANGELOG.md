@@ -1,6 +1,6 @@
 * Версия 1.4:
 
-  * Добавлены инструкции для пользователей и админов -> **(INSTRUCTIONS.md)](https://github.com/hfaify/Photoprotocol/blob/main/INSTRUCTIONS.md)**
+  * Добавлены инструкции для пользователей и админов -> **[INSTRUCTIONS.md](https://github.com/hfaify/Photoprotocol/blob/main/INSTRUCTIONS.md)**
   * Добавлены приложения для ПК и Android (для тех кому не удобно пользоваться скриптом из браузера)
   * Добавлена возможность обрабатывать больше одного изображения в несколько потоков
 
