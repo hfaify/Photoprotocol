@@ -14,7 +14,7 @@
 
 Подходит для Chromium-браузеров (Google Chrome, Яндекс.Браузер, Microsoft Edge, Brave, Opera):
 
-1\. Скачайте архив со свежей версией из раздела \*\*\[Releases](https://github.com)\*\*.
+1\. Скачайте архив со свежей версией из раздела \*\*\[Releases](https://github.com/hfaify/Photoprotocol/releases)\*\*.
 
 2\. Распакуйте папку `extension` в любое удобное место на диске.
 
@@ -34,7 +34,7 @@
 
 1\. Откройте прямую ссылку на скрипт:  
 
-&#x20;  👉 \*\*\[Установить photoprotocol.user.js](https://github.io)\*\*
+&#x20;  👉 \*\*\[Установить photoprotocol.user.js](https://hfaify.github.io/Photoprotocol/userscript/photoprotocol.user.js)\*\*
 
 2\. Подтвердите установку скрипта в открывшемся окне менеджера.
 
@@ -46,7 +46,7 @@
 
 Используйте легковесный автономный плеер:
 
-1\. Скачайте архив с релизом из раздела \*\*\[Releases](https://github.com)\*\* и распакуйте папку `appdes`.
+1\. Скачайте архив с релизом из раздела \*\*\[Releases](https://github.com/hfaify/Photoprotocol/releases)\*\* и распакуйте папку `appdes`.
 
 2\. \*\*Если изображение отправлено файлом:\*\*
 
@@ -74,7 +74,7 @@
 
 \### 4. Просмотр на мобильных устройствах (Android)
 
-1\. Скачайте установочный пакет из раздела \*\*\[Releases](https://github.com)\*\* (папка `appand` / файл `.apk`).
+1\. Скачайте установочный пакет из раздела \*\*\[Releases](https://github.com/hfaify/Photoprotocol/releases)\*\* (папка `appand` / файл `.apk`).
 
 2\. Откройте загруженный `.apk` файл и подтвердите установку (если появится предупреждение Google Play Protect — нажмите \*\*«Подробнее»\*\* -> \*\*«Все равно установить»\*\*).
 
@@ -92,7 +92,7 @@
 
 > Способ работает только для публичных каналов без возрастной отметки 18+.
 
-1\. Перейдите по ссылке: \*\*\[t.me/photoprotocol\_viewer\_bot/gallery](https://t.me)\*\*.
+1\. Перейдите по ссылке: \*\*\[t.me/photoprotocol\_viewer\_bot/gallery](t.me/photoprotocol_viewer_bot/gallery)\*\*.
 
 2\. Примите условия использования.
 
@@ -108,7 +108,7 @@
 
 
 
-Подготовьте файлы из папки `python`, скачанной из раздела \*\*\[Releases](https://github.com)\*\*.
+Подготовьте файлы из папки `python`, скачанной из раздела \*\*\[Releases](https://github.com/hfaify/Photoprotocol/releases)\*\*.
 
 
 
